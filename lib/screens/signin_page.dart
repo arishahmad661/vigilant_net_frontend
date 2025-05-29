@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import 'home_page.dart';
 
 class SignInPage extends StatefulWidget {
@@ -22,6 +23,7 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AuthService _authService = AuthService();
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -143,6 +145,31 @@ class _SignInPageState extends State<SignInPage> {
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
+                      ),
+                    ),
+                  ),
+
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final user = await _authService.signInWithGoogle();
+                      if (user != null) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HomePage(),
+                          ),
+                        );
+
+                      }
+                    },
+                    icon: Icon(Icons.login, color: Colors.white),
+                    label: Text("Sign in with Google", style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white24,
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.white30),
                       ),
                     ),
                   ),

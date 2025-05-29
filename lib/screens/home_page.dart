@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:vigilant_net_project/models/apk_malware_response.dart';
 import '../utils/const.dart';
 import 'analyze_url.dart';
 import 'cpu_usage_page.dart';
@@ -29,6 +32,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   late Timer _percentageTimer;
   final Random _random = Random();
   bool _isIncreasing = true;
+  String responseMessage = "";
 
   @override
   void initState() {
@@ -201,60 +205,166 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-
   Future<void> pickAndUpload() async {
-    final result = await FilePicker.platform.pickFiles(
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['apk'],
     );
 
-    if (result != null && result.files.isNotEmpty) {
-      await uploadApkFile(result.files.first);
-    }
-  }
+    if (result != null && result.files.single.path != null) {
+      File file = File(result.files.single.path!);
+      String fileName = path.basename(file.path);
 
-  Future<void> uploadApkFile(PlatformFile file) async {
-    try {
-      // Read file bytes from the path
-      final File apkFile = File(file.path!);
-      final apkBytes = await apkFile.readAsBytes();
+      var request = http.MultipartRequest(
+        "POST",
+        Uri.parse("${URL}/scan/apk"), // Replace with your Go backend URL
+      );
 
-      final uri = Uri.parse('${URL}/scan/apk');
-      final request = http.MultipartRequest('POST', uri)
-        ..files.add(
-          http.MultipartFile.fromBytes(
-            'file',
-            apkBytes,
-            filename: file.name,
-            contentType: MediaType('application', 'vnd.android.package-archive'),
-          ),
-        );
+      request.files.add(await http.MultipartFile.fromPath("apk", file.path));
 
-      final response = await request.send();
-      print(response);
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
       if (response.statusCode == 200) {
-        print("✅ APK uploaded successfully.");
+        setState(() {
+          responseMessage = jsonEncode(jsonDecode(response.body));
+        });
       } else {
-        print("❌ Failed to upload APK. Status: ${response.statusCode}");
+        setState(() {
+          responseMessage = "Error: ${response.statusCode}";
+        });
       }
-    } catch (e) {
-      print("⚠️ Error uploading APK: $e");
+    } else {
+      setState(() {
+        responseMessage = "No APK selected.";
+      });
     }
+    Fluttertoast.showToast(
+        msg: responseMessage,
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 1,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
+        fontSize: 16.0
+    );
+    print(responseMessage);
+    showApkAnalysisBottomSheet(ScanResult.fromJson(jsonDecode(responseMessage)));
   }
 
-
-  Future<PlatformFile?> pickApkFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['apk'],
+  void showApkAnalysisBottomSheet(ScanResult responseMessage) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1a237e),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Content Area
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Heading
+                      const Text(
+                        'Scan Summary',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Malware Check
+                      const Text(
+                        'Malware Check:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        responseMessage.malwareCheck,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.greenAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Permissions
+                      const Text(
+                        'Permissions:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: responseMessage.permissions.length,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4.0),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '• ',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      responseMessage.permissions[index],
+                                      style: const TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-    if (result == null) return null; // user canceled
-
-    return result.files.first;
   }
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
